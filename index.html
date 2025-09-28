@@ -8,17 +8,17 @@
       margin: 0;
       padding-bottom: 70px; /* 入力欄の高さ分スペース確保 */
       font-family: sans-serif;
-      font-size: 1.5em; /* 全体の文字を2倍に */
+      font-size: 1.5em; /* 全体の文字を大きく */
     }
 
     #listContainer {
       padding: 10px;
       overflow-y: auto;
-      max-height: calc(100vh - 80px); /* 入力欄の分だけ高さを調整 */
+      max-height: calc(100vh - 80px); /* 入力欄の分だけ高さ調整 */
     }
 
     #list li {
-      white-space: nomal;
+      white-space: normal;
       margin-bottom: 10px;
     }
 
@@ -61,13 +61,25 @@
       line-height: 1.5;
       min-height: 1.5em; /* 初期高さは1行分 */
       resize: none; /* ユーザーがリサイズできないように */
-      overflow-y: hidden; /* スクロールバーを非表示 */
+      overflow-y: hidden; /* スクロールバー非表示 */
       padding: 8px;
       box-sizing: border-box;
     }
 
     #saveBtn {
       padding: 6px 12px;
+      font-size: 1em;
+      cursor: pointer;
+    }
+
+    /* ページネーション */
+    #pagination {
+      margin-top: 10px;
+    }
+
+    #pagination button {
+      margin: 0 5px;
+      padding: 5px 10px;
       font-size: 1em;
       cursor: pointer;
     }
@@ -78,6 +90,11 @@
   <div id="listContainer">
     <h1>ひとこと日記</h1>
     <ol id="list"></ol>
+    <div id="pagination">
+      <button id="prevBtn">前へ</button>
+      <span id="pageInfo"></span>
+      <button id="nextBtn">次へ</button>
+    </div>
   </div>
 
   <div id="inputArea">
@@ -103,50 +120,46 @@
       console.error("DBエラー:", event.target.error);
     };
 
-    document.getElementById("saveBtn").onclick = function() {
-      const text = document.getElementById("entry").value;
-      if (!text) return;
+    // ページ管理
+    let currentPage = 1;
+    const itemsPerPage = 10;
+    let allEntries = [];
 
-      const tx = db.transaction("entries", "readwrite");
-      const store = tx.objectStore("entries");
-      store.add({ text: text, date: new Date().toLocaleString() });
-
-      tx.oncomplete = function() {
-        document.getElementById("entry").value = "";
-        document.getElementById("entry").style.height = "auto"; // 入力欄リセット
-        showEntries();
-      };
-    };
-
+    // 日記を表示
     function showEntries() {
       const tx = db.transaction("entries", "readonly");
       const store = tx.objectStore("entries");
-      const request = store.openCursor();
-
-      const list = document.getElementById("list");
-      list.innerHTML = "";
+      const request = store.getAll();
 
       request.onsuccess = function(event) {
-        const cursor = event.target.result;
-        if (cursor) {
+        allEntries = event.target.result;
+        const totalPages = Math.ceil(allEntries.length / itemsPerPage);
+        if (currentPage > totalPages) currentPage = totalPages || 1;
+
+        const list = document.getElementById("list");
+        list.innerHTML = "";
+
+        const startIndex = (currentPage - 1) * itemsPerPage;
+        const endIndex = startIndex + itemsPerPage;
+        const currentEntries = allEntries.slice(startIndex, endIndex);
+
+        currentEntries.forEach((entry, index) => {
           const li = document.createElement("li");
 
-// 日時部分
-const dateDiv = document.createElement("div");
-dateDiv.textContent = cursor.value.date;
+          const dateDiv = document.createElement("div");
+          dateDiv.textContent = entry.date;
 
-// 内容部分
-const textDiv = document.createElement("div");
-textDiv.textContent = cursor.value.text
+          const textDiv = document.createElement("div");
+          textDiv.textContent = entry.text;
 
           const delBtn = document.createElement("button");
           delBtn.textContent = "削除";
           delBtn.className = "deleteBtn";
-          delBtn.dataset.key = cursor.key;
+          delBtn.dataset.key = index + startIndex;
 
           delBtn.addEventListener("click", function() {
-            const number = Array.from(list.children).indexOf(li) + 1;
-            if (confirm(`${number}番を削除しますか？削除したものは復元できません！`)) {
+            const number = Array.from(list.children).indexOf(li) + 1 + startIndex;
+            if (confirm(`${number + 1}番を削除しますか？削除したものは復元できません！`)) {
               deleteEntry(delBtn.dataset.key);
             }
           });
@@ -155,9 +168,9 @@ textDiv.textContent = cursor.value.text
           li.appendChild(textDiv);
           li.appendChild(delBtn);
           list.appendChild(li);
+        });
 
-          cursor.continue();
-        }
+        document.getElementById("pageInfo").textContent = `ページ ${currentPage} / ${totalPages || 1}`;
       };
     }
 
@@ -171,12 +184,55 @@ textDiv.textContent = cursor.value.text
       };
     }
 
-    // 入力欄の高さを自動調整
+    // 新規日記追加
+    document.getElementById("saveBtn").onclick = function() {
+      const text = document.getElementById("entry").value;
+      if (!text) return;
+
+      const tx = db.transaction("entries", "readwrite");
+      const store = tx.objectStore("entries");
+      store.add({ text: text, date: new Date().toLocaleString() });
+
+      tx.oncomplete = function() {
+        document.getElementById("entry").value = "";
+        document.getElementById("entry").style.height = "auto";
+
+        // 最新ページへ移動
+        const countTx = db.transaction("entries", "readonly");
+        const countStore = countTx.objectStore("entries");
+        const countRequest = countStore.count();
+
+        countRequest.onsuccess = function() {
+          const totalItems = countRequest.result;
+          currentPage = Math.ceil(totalItems / itemsPerPage) || 1;
+          showEntries();
+        };
+      };
+    };
+
+    // 入力欄の自動リサイズ
     const textarea = document.getElementById("entry");
     textarea.addEventListener("input", () => {
-      textarea.style.height = "auto"; 
+      textarea.style.height = "auto";
       textarea.style.height = textarea.scrollHeight + "px";
     });
+
+    // ページ切替ボタン
+    document.getElementById("prevBtn").addEventListener("click", () => {
+      if (currentPage > 1) {
+        currentPage--;
+        showEntries();
+      }
+    });
+
+    document.getElementById("nextBtn").addEventListener("click", () => {
+      const totalPages = Math.ceil(allEntries.length / itemsPerPage);
+      if (currentPage < totalPages) {
+        currentPage++;
+        showEntries();
+      }
+    });
   </script>
+
 </body>
-</html>
+</html>ß
