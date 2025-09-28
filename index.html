@@ -6,58 +6,64 @@
   <style>
     body {
       margin: 0;
-      padding-bottom: 70px; /* 入力欄の高さ分スペースを確保（下の入力欄が隠れないようにする） */
+      padding-bottom: 70px; /* 入力欄の高さ分スペース確保 */
       font-family: sans-serif;
+      font-size: 1.5em; /* 全体の文字を2倍に */
     }
 
     #listContainer {
       padding: 10px;
-      overflow-y: auto; /* 縦スクロール可能にする */
-      max-height: calc(100vh - 80px); /* 入力欄の分だけ高さを減らす */
+      overflow-y: auto;
+      max-height: calc(100vh - 80px); /* 入力欄の分だけ高さを調整 */
     }
 
     #list li {
-      white-space: pre-wrap; /* 改行や空白をそのまま表示 */
-      margin-bottom: 10px; /* 各日記の間に余白 */
+      white-space: nomal;
+      margin-bottom: 10px;
     }
 
     .entryContent {
-      display: block;       /* ブロック要素化して改行を反映 */
-      margin-bottom: 5px;   /* 本文と削除ボタンの間に余白 */
+      display: block;
+      margin-bottom: 5px;
     }
 
     .deleteBtn {
-      background-color: #f44336; /* 赤い削除ボタン */
+      background-color: #f44336;
       color: white;
       border: none;
-      padding: 3px 6px;
+      padding: 6px 10px;
       cursor: pointer;
       border-radius: 3px;
       font-size: 0.9em;
     }
 
     .deleteBtn:hover {
-      background-color: #d32f2f; /* ホバー時に少し濃い赤 */
+      background-color: #d32f2f;
     }
 
-    /* 入力欄を画面下に固定する */
+    /* 入力欄の固定フッター */
     #inputArea {
       position: fixed;
       bottom: 0;
       left: 0;
-      width: 100%; /* 横幅いっぱい */
+      width: 100%;
       background: #f0f0f0;
-      display: flex; /* 横並び配置 */
+      display: flex;
       padding: 5px 10px;
-      box-shadow: 0 -2px 5px rgba(0,0,0,0.2); /* 上に影 */
+      box-shadow: 0 -2px 5px rgba(0,0,0,0.2);
       box-sizing: border-box;
     }
 
     #entry {
-      flex-grow: 1;        /* 残り幅を全部使う */
-      margin-right: 10px;  /* ボタンとの間隔 */
-      padding: 5px;
+      flex-grow: 1;
+      margin-right: 10px;
       font-size: 1em;
+      line-height: 1.5;
+      min-height: 1.5em; /* 初期高さは1行分 */
+      resize: none; /* ユーザーがリサイズできないように */
+      overflow-y: hidden; /* スクロールバーを非表示 */
+      padding: 8px;
+      box-sizing: border-box;
     }
 
     #saveBtn {
@@ -69,108 +75,108 @@
 </head>
 <body>
 
-  <!-- 日記一覧を表示する領域 -->
   <div id="listContainer">
     <h1>ひとこと日記</h1>
-    <ol id="list"></ol> <!-- データ表示用のリスト（番号付き） -->
+    <ol id="list"></ol>
   </div>
 
-  <!-- 入力欄（画面下に固定表示される） -->
   <div id="inputArea">
-    <textarea id="entry" rows="2" placeholder="今日のひとこと"></textarea> <!-- 入力エリア -->
-    <button id="saveBtn">送信</button> <!-- 保存ボタン -->
+    <textarea id="entry" rows="1" placeholder="今日のひとこと"></textarea>
+    <button id="saveBtn">保存</button>
   </div>
 
   <script>
-    // === IndexedDB の準備 ===
-    let db; // データベースオブジェクトを入れる箱
-    const request = indexedDB.open("DiaryDB", 1); // 「DiaryDB」という名前でDBを開く（バージョン1）
+    let db;
+    const request = indexedDB.open("DiaryDB", 1);
 
-    // 初回作成やバージョン更新時に呼ばれる
     request.onupgradeneeded = function(event) {
       db = event.target.result;
-      db.createObjectStore("entries", { autoIncrement: true }); // entries というオブジェクトストアを作る
+      db.createObjectStore("entries", { autoIncrement: true });
     };
 
-    // DBが正常に開けた時
     request.onsuccess = function(event) {
       db = event.target.result;
-      showEntries(); // データを画面に表示
+      showEntries();
     };
 
-    // DBが開けなかった時のエラー処理
     request.onerror = function(event) {
       console.error("DBエラー:", event.target.error);
     };
 
-    // === データ保存処理 ===
     document.getElementById("saveBtn").onclick = function() {
-      const text = document.getElementById("entry").value; // 入力欄の文字を取得
-      if (!text) return; // 何も入力されていなければ終了
+      const text = document.getElementById("entry").value;
+      if (!text) return;
 
-      const tx = db.transaction("entries", "readwrite"); // 書き込み可能トランザクションを開始
-      const store = tx.objectStore("entries"); // entries ストアを指定
-      store.add({ text: text, date: new Date().toLocaleString() }); // 日付＋本文を保存
+      const tx = db.transaction("entries", "readwrite");
+      const store = tx.objectStore("entries");
+      store.add({ text: text, date: new Date().toLocaleString() });
 
       tx.oncomplete = function() {
-        document.getElementById("entry").value = ""; // 入力欄をクリア
-        showEntries(); // 再表示
+        document.getElementById("entry").value = "";
+        document.getElementById("entry").style.height = "auto"; // 入力欄リセット
+        showEntries();
       };
     };
 
-    // === データ表示処理 ===
     function showEntries() {
-      const tx = db.transaction("entries", "readonly"); // 読み取り専用トランザクション
+      const tx = db.transaction("entries", "readonly");
       const store = tx.objectStore("entries");
-      const request = store.openCursor(); // 先頭から順にカーソルでデータを読む
+      const request = store.openCursor();
 
       const list = document.getElementById("list");
-      list.innerHTML = ""; // 一度リストを空にする
+      list.innerHTML = "";
 
       request.onsuccess = function(event) {
-        const cursor = event.target.result; // カーソル（データ1件分）
+        const cursor = event.target.result;
         if (cursor) {
-          const li = document.createElement("li"); // リスト項目を作る
+          const li = document.createElement("li");
 
-          // === 日記の内容（日時＋本文） ===
-          const contentSpan = document.createElement("span");
-          contentSpan.className = "entryContent";
-          contentSpan.textContent = `${cursor.value.date}\n${cursor.value.text}`;
+// 日時部分
+const dateDiv = document.createElement("div");
+dateDiv.textContent = cursor.value.date;
 
-          // === 削除ボタン ===
+// 内容部分
+const textDiv = document.createElement("div");
+textDiv.textContent = cursor.value.text
+
           const delBtn = document.createElement("button");
           delBtn.textContent = "削除";
           delBtn.className = "deleteBtn";
-          delBtn.dataset.key = cursor.key; // 削除に必要なキーを保持
+          delBtn.dataset.key = cursor.key;
 
-          // 削除ボタンクリック時の処理
           delBtn.addEventListener("click", function() {
-            const number = Array.from(list.children).indexOf(li) + 1; // li の番号を調べる
-            if (confirm(`${number}番を削除しますか？`)) {
-              deleteEntry(delBtn.dataset.key); // 削除処理へ
+            const number = Array.from(list.children).indexOf(li) + 1;
+            if (confirm(`${number}番を削除しますか？削除したものは復元できません！`)) {
+              deleteEntry(delBtn.dataset.key);
             }
           });
 
-          // li に内容と削除ボタンを追加
-          li.appendChild(contentSpan);
+          li.appendChild(dateDiv);
+          li.appendChild(textDiv);
           li.appendChild(delBtn);
           list.appendChild(li);
 
-          cursor.continue(); // 次のデータへ
+          cursor.continue();
         }
       };
     }
 
-    // === 削除処理 ===
     function deleteEntry(key) {
-      const tx = db.transaction("entries", "readwrite"); // 書き込み可能トランザクション
+      const tx = db.transaction("entries", "readwrite");
       const store = tx.objectStore("entries");
-      const request = store.delete(Number(key)); // 指定したキーのデータを削除
+      const request = store.delete(Number(key));
 
       request.onsuccess = function() {
-        showEntries(); // リストを更新
+        showEntries();
       };
     }
+
+    // 入力欄の高さを自動調整
+    const textarea = document.getElementById("entry");
+    textarea.addEventListener("input", () => {
+      textarea.style.height = "auto"; 
+      textarea.style.height = textarea.scrollHeight + "px";
+    });
   </script>
 </body>
 </html>
