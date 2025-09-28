@@ -2,29 +2,24 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>ひとこと日記 (チャット風)</title>
+  <title>ひとこと日記 (チャット風) — 修正版</title>
   <style>
     body {
       margin: 0;
-      padding-bottom: 70px; /* 入力欄の高さ分スペース確保 */
+      padding-bottom: 70px;
       font-family: sans-serif;
-      font-size: 1.5em; /* 全体の文字を大きく */
+      font-size: 1.5em;
     }
 
     #listContainer {
       padding: 10px;
       overflow-y: auto;
-      max-height: calc(100vh - 80px); /* 入力欄の分だけ高さ調整 */
+      max-height: calc(100vh - 80px);
     }
 
     #list li {
-      white-space: normal;
+      white-space: pre-wrap; /* 改行を反映（以前のバージョンに合わせています） */
       margin-bottom: 10px;
-    }
-
-    .entryContent {
-      display: block;
-      margin-bottom: 5px;
     }
 
     .deleteBtn {
@@ -41,7 +36,6 @@
       background-color: #d32f2f;
     }
 
-    /* 入力欄の固定フッター */
     #inputArea {
       position: fixed;
       bottom: 0;
@@ -59,9 +53,9 @@
       margin-right: 10px;
       font-size: 1em;
       line-height: 1.5;
-      min-height: 1.5em; /* 初期高さは1行分 */
-      resize: none; /* ユーザーがリサイズできないように */
-      overflow-y: hidden; /* スクロールバー非表示 */
+      min-height: 1.5em;
+      resize: none;
+      overflow-y: hidden;
       padding: 8px;
       box-sizing: border-box;
     }
@@ -72,7 +66,6 @@
       cursor: pointer;
     }
 
-    /* ページネーション */
     #pagination {
       margin-top: 10px;
     }
@@ -98,7 +91,7 @@
   </div>
 
   <div id="inputArea">
-    <textarea id="entry" rows="1" placeholder="今日のひとこと"maxlength="31"></textarea>
+    <textarea id="entry" rows="1" placeholder="今日のひとこと" maxlength="30"></textarea>
     <button id="saveBtn">保存</button>
   </div>
 
@@ -108,33 +101,62 @@
 
     request.onupgradeneeded = function(event) {
       db = event.target.result;
-      db.createObjectStore("entries", { autoIncrement: true });
+      // keyPath:id + autoIncrement で作成（既存ストアがあればこの処理はスキップされます）
+      if (!db.objectStoreNames.contains("entries")) {
+        db.createObjectStore("entries", { keyPath: "id", autoIncrement: true });
+      }
     };
 
     request.onsuccess = function(event) {
       db = event.target.result;
-      showEntries();
+      showEntries(); // 最初に一覧表示
     };
 
     request.onerror = function(event) {
       console.error("DBエラー:", event.target.error);
     };
 
-    // ページ管理
     let currentPage = 1;
     const itemsPerPage = 10;
-    let allEntries = [];
+    let allEntries = []; // {id, date, text} の配列（常に cursor.key を id として保持する）
 
-    // 日記を表示
-    function showEntries() {
+    // --- すべてのエントリを cursor で読み出して allEntries を作る（必ず key を取得する） ---
+    function loadAllEntries(callback) {
       const tx = db.transaction("entries", "readonly");
       const store = tx.objectStore("entries");
-      const request = store.getAll();
+      const entries = [];
+      const req = store.openCursor();
 
-      request.onsuccess = function(event) {
-        allEntries = event.target.result;
-        const totalPages = Math.ceil(allEntries.length / itemsPerPage);
-        if (currentPage > totalPages) currentPage = totalPages || 1;
+      req.onsuccess = function(event) {
+        const cursor = event.target.result;
+        if (cursor) {
+          const val = cursor.value || {};
+          const id = cursor.key; // ここでキーを必ず取得（既存データで value.id が無くても大丈夫）
+          entries.push({
+            id: id,
+            date: val.date || "",
+            text: val.text || ""
+          });
+          cursor.continue();
+        } else {
+          // 完了
+          console.log("loadAllEntries: total=", entries.length);
+          callback(entries);
+        }
+      };
+
+      req.onerror = function(e) {
+        console.error("cursor取得エラー:", e.target.error);
+        callback([]);
+      };
+    }
+
+    // --- 一覧表示（ページネーション対応） ---
+    function showEntries() {
+      loadAllEntries(function(entries) {
+        allEntries = entries;
+        const totalPages = Math.max(1, Math.ceil(allEntries.length / itemsPerPage));
+        if (currentPage > totalPages) currentPage = totalPages;
 
         const list = document.getElementById("list");
         list.innerHTML = "";
@@ -143,7 +165,7 @@
         const endIndex = startIndex + itemsPerPage;
         const currentEntries = allEntries.slice(startIndex, endIndex);
 
-        currentEntries.forEach((entry, index) => {
+        currentEntries.forEach((entry, idx) => {
           const li = document.createElement("li");
 
           const dateDiv = document.createElement("div");
@@ -155,11 +177,15 @@
           const delBtn = document.createElement("button");
           delBtn.textContent = "削除";
           delBtn.className = "deleteBtn";
-          delBtn.dataset.key = index + startIndex;
+          delBtn.dataset.key = String(entry.id); // cursor.key を文字列で保持
+
+          // デバッグ出力（キーと中身を確認）
+          console.log("render entry:", { index: startIndex + idx, id: entry.id, date: entry.date });
 
           delBtn.addEventListener("click", function() {
-            const number = Array.from(list.children).indexOf(li) + 1 + startIndex;
-            if (confirm(`${number + 1}番を削除しますか？削除したものは復元できません！`)) {
+            // 確認は番号表示に頼らず、キーで削除するようにする（番号ズレ防止）
+            if (confirm("この日記を削除しますか？削除したものは復元できません！")) {
+              console.log("delete requested key =", delBtn.dataset.key);
               deleteEntry(delBtn.dataset.key);
             }
           });
@@ -170,54 +196,79 @@
           list.appendChild(li);
         });
 
-        document.getElementById("pageInfo").textContent = `ページ ${currentPage} / ${totalPages || 1}`;
-      };
+        document.getElementById("pageInfo").textContent = `ページ ${currentPage} / ${totalPages}`;
+      });
     }
 
+    // --- 削除 ---
     function deleteEntry(key) {
       const tx = db.transaction("entries", "readwrite");
       const store = tx.objectStore("entries");
-      const request = store.delete(Number(key));
+      const req = store.delete(Number(key));
 
-      request.onsuccess = function() {
+      req.onsuccess = function() {
+        console.log("deleted key:", key);
+        // 再表示
+        // showEntries() を呼べば cursor から fresh なリストを作るのでキーの整合性も保たれる
+        // ページ数調整は showEntries 内で行う
         showEntries();
+      };
+
+      req.onerror = function(e) {
+        console.error("delete error:", e.target.error);
+        alert("削除に失敗しました。コンソールを確認してください。");
       };
     }
 
-    // 新規日記追加
+    // --- 保存（追加） ---
     document.getElementById("saveBtn").onclick = function() {
-      const text = document.getElementById("entry").value;
+      const text = document.getElementById("entry").value.trim();
       if (!text) return;
 
       const tx = db.transaction("entries", "readwrite");
       const store = tx.objectStore("entries");
-      store.add({ text: text, date: new Date().toLocaleString() });
+      const addReq = store.add({ text: text, date: new Date().toLocaleString() });
+
+      addReq.onsuccess = function(e) {
+        console.log("added id:", e.target.result);
+      };
 
       tx.oncomplete = function() {
         document.getElementById("entry").value = "";
         document.getElementById("entry").style.height = "auto";
 
-        // 最新ページへ移動
+        // 最新ページへ移動（件数カウントで算出）
         const countTx = db.transaction("entries", "readonly");
         const countStore = countTx.objectStore("entries");
-        const countRequest = countStore.count();
+        const countReq = countStore.count();
 
-        countRequest.onsuccess = function() {
-          const totalItems = countRequest.result;
-          currentPage = Math.ceil(totalItems / itemsPerPage) || 1;
+        countReq.onsuccess = function() {
+          const totalItems = countReq.result;
+          currentPage = Math.max(1, Math.ceil(totalItems / itemsPerPage));
+          showEntries();
+        };
+
+        countReq.onerror = function(e) {
+          // 万一カウント失敗しても一覧を再表示
+          console.error("count error:", e.target.error);
           showEntries();
         };
       };
+
+      tx.onerror = function(e) {
+        console.error("add transaction error:", e.target.error);
+        alert("保存に失敗しました。コンソールを確認してください。");
+      };
     };
 
-    // 入力欄の自動リサイズ
+    // --- 入力欄の自動リサイズ ---
     const textarea = document.getElementById("entry");
     textarea.addEventListener("input", () => {
       textarea.style.height = "auto";
       textarea.style.height = textarea.scrollHeight + "px";
     });
 
-    // ページ切替ボタン
+    // --- ページ切替 ---
     document.getElementById("prevBtn").addEventListener("click", () => {
       if (currentPage > 1) {
         currentPage--;
@@ -226,7 +277,7 @@
     });
 
     document.getElementById("nextBtn").addEventListener("click", () => {
-      const totalPages = Math.ceil(allEntries.length / itemsPerPage);
+      const totalPages = Math.max(1, Math.ceil(allEntries.length / itemsPerPage));
       if (currentPage < totalPages) {
         currentPage++;
         showEntries();
