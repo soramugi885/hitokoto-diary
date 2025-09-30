@@ -2,46 +2,48 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>1コメ日記</title>
+  <title>1コメ日記（改良版）</title>
   <style>
+    /* --- ページ全体の基本設定 --- */
     body {
       margin: 0;
-      padding-bottom: 80px; /* 入力欄の高さ分確保 */
+      padding-bottom: 80px; /* 入力欄スペース分を確保 */
       font-family: sans-serif;
-      font-size: 1.2em;
+      font-size: 32px;; /* 全体文字サイズ */
     }
 
-    /* スクロール可能なコンテナ */
+    /* --- 日記リストのコンテナ --- */
     #listContainer {
       padding: 10px;
-      overflow-y: auto;
-      max-height: calc(100vh - 90px);
+      overflow-y: auto; /* 縦スクロール可能 */
+      max-height: calc(100vh - 90px); /* 入力欄を除いた高さ */
       box-sizing: border-box;
     }
 
-    /* 各エントリ */
+    /* --- 各日記エントリー --- */
     .entry {
       padding: 10px 0;
-      border-bottom: 1px solid #ddd;
+      border-bottom: 1px solid #ddd; /* 各日記の下線 */
     }
 
-    /* 日付と削除ボタンを隣に */
+    /* --- 日記のヘッダー（日付 + 削除ボタン） --- */
     .entryHeader {
       display: flex;
       align-items: center;
-      gap: 10px;
-      color: #777;
+      gap: 10px; /* 日付と削除ボタンの間隔 */
+      color: #777; /* グレー文字 */
       font-size: 0.9em;
       margin-bottom: 6px;
     }
 
-    /* 本文だけ文字サイズ18px */
+    /* --- 日記本文 --- */
     .entryText {
-      white-space: pre-wrap;
+      white-space: pre-wrap; /* 改行を反映 */
       color: #000;
-      font-size: 32px;
+      font-size: 32px;; /* 本文文字サイズ */
     }
 
+    /* --- 削除ボタン --- */
     .deleteBtn {
       background: none;
       border: none;
@@ -50,12 +52,11 @@
       font-size: 0.9em;
       padding: 2px 6px;
     }
-
     .deleteBtn:hover {
-      text-decoration: underline;
+      text-decoration: underline; /* ホバー時に下線 */
     }
 
-    /* 入力欄の固定フッター */
+    /* --- 入力欄エリア（フッター固定） --- */
     #inputArea {
       position: fixed;
       bottom: 0;
@@ -69,22 +70,24 @@
       gap: 8px;
     }
 
+    /* --- テキスト入力欄 --- */
     #entry {
-      flex-grow: 1;
-      font-size: 1em;
+      flex-grow: 1; /* 横幅最大化 */
+      font-size: 32px;; /* 文字サイズ */
       line-height: 1.5;
-      min-height: 40px; /* 高さ調整 */
-      resize: none;
-      overflow-y: hidden;
+      min-height: 40px;
+      resize: none; /* リサイズ不可 */
+      overflow-y: hidden; /* スクロールバー非表示 */
       padding: 10px;
       box-sizing: border-box;
       border: 1px solid #ccc;
       border-radius: 6px;
     }
 
+    /* --- 保存ボタン --- */
     #saveBtn {
-      font-size: 1em;
-      padding: 0 16px;
+      font-size: 32px;;
+      padding: 0 40px;
       min-height: 40px;
       border-radius: 6px;
       background-color: #4CAF50;
@@ -92,12 +95,11 @@
       border: none;
       cursor: pointer;
     }
-
     #saveBtn:hover {
-      background-color: #45a049;
+      background-color: #45a049; /* ホバー色 */
     }
 
-    /* スマホ向けレスポンシブ */
+    /* --- スマホ向けレスポンシブ --- */
     @media (max-width: 600px) {
       #entry {
         font-size: 32px;
@@ -109,140 +111,162 @@
         padding: 0 40px;
       }
     }
-
   </style>
 </head>
 <body>
 
-  <div id="listContainer">
-    <h1>1コメント日記ver.1.4</h1>
-    <div id="list"></div>
-  </div>
+<!-- --- 日記リストの表示エリア --- -->
+<div id="listContainer">
+  <h1>1コメント日記ver.1.5</h1>
+  <div id="list"></div> <!-- 日記エントリーをここに追加 -->
+</div>
 
-  <div id="inputArea">
-    <textarea id="entry" rows="1" placeholder="今日のひとこと" maxlength="30"></textarea>
-    <button id="saveBtn">保存</button>
-  </div>
+<!-- --- 入力欄エリア --- -->
+<div id="inputArea">
+  <textarea id="entry" rows="1" placeholder="今日のひとこと" maxlength="200"></textarea>
+  <button id="saveBtn">保存</button>
+</div>
 
-  <script>
-    let db;
-    const request = indexedDB.open("DiaryDB", 1);
+<script>
+let db;
 
-    request.onupgradeneeded = function(event) {
-      db = event.target.result;
-      if (!db.objectStoreNames.contains("entries")) {
-        db.createObjectStore("entries", { keyPath: "id", autoIncrement: true });
-      }
-    };
+// --- IndexedDBオープン --- 
+const request = indexedDB.open("DiaryDB", 1);
 
-    request.onsuccess = function(event) {
-      db = event.target.result;
-      showEntries();
-    };
+// --- データベース作成／バージョンアップ時 ---
+request.onupgradeneeded = function(event) {
+  db = event.target.result;
+  if (!db.objectStoreNames.contains("entries")) {
+    db.createObjectStore("entries", { keyPath: "id", autoIncrement: true }); // id自動採番
+  }
+};
 
-    request.onerror = function(event) {
-      console.error("DBエラー:", event.target.error);
-    };
+// --- DBオープン成功時 ---
+request.onsuccess = function(event) {
+  db = event.target.result;
+  showEntries(); // 既存データ表示
+};
 
-    function loadAllEntries(callback) {
-      const tx = db.transaction("entries", "readonly");
-      const store = tx.objectStore("entries");
-      const entries = [];
-      const req = store.openCursor();
+// --- DBオープンエラー時 ---
+request.onerror = function(event) {
+  console.error("DBエラー:", event.target.error);
+};
 
-      req.onsuccess = function(e) {
-        const cursor = e.target.result;
-        if (cursor) {
-          const val = cursor.value || {};
-          entries.push({
-            id: cursor.key,
-            date: val.date || "",
-            text: val.text || ""
-          });
-          cursor.continue();
-        } else {
-          callback(entries);
-        }
-      };
+// --- 全件取得・最新順ソート ---
+function loadAllEntries(callback) {
+  const tx = db.transaction("entries", "readonly");
+  const store = tx.objectStore("entries");
+  const entries = [];
+  const req = store.openCursor();
 
-      req.onerror = function(e) {
-        console.error("cursor取得エラー:", e.target.error);
-        callback([]);
-      };
-    }
-
-    function showEntries() {
-      if (!db) return;
-      loadAllEntries(function(entries) {
-        const listEl = document.getElementById("list");
-        listEl.innerHTML = "";
-
-        entries.forEach((entry) => {
-          const entryDiv = document.createElement("div");
-          entryDiv.className = "entry";
-
-          const headerDiv = document.createElement("div");
-          headerDiv.className = "entryHeader";
-
-          const dateDiv = document.createElement("div");
-          dateDiv.textContent = entry.date;
-
-          const delBtn = document.createElement("button");
-          delBtn.className = "deleteBtn";
-          delBtn.textContent = "削除";
-          delBtn.dataset.key = String(entry.id);
-
-          delBtn.addEventListener("click", function() {
-            if (confirm("この日記を削除しますか？削除したものは復元できません！")) {
-              deleteEntry(delBtn.dataset.key);
-            }
-          });
-
-          headerDiv.appendChild(dateDiv);
-          headerDiv.appendChild(delBtn);
-
-          const textDiv = document.createElement("div");
-          textDiv.className = "entryText";
-          textDiv.textContent = entry.text;
-
-          entryDiv.appendChild(headerDiv);
-          entryDiv.appendChild(textDiv);
-          listEl.appendChild(entryDiv);
-        });
-
-        const container = document.getElementById("listContainer");
-        setTimeout(() => { container.scrollTop = container.scrollHeight; }, 0);
+  req.onsuccess = function(e) {
+    const cursor = e.target.result;
+    if (cursor) {
+      const val = cursor.value || {};
+      entries.push({
+        id: cursor.key,
+        date: val.date || "",
+        text: val.text || ""
       });
+      cursor.continue();
+    } else {
+      // 日付順にソート（古→新）
+      entries.sort((a,b) => new Date(a.date) - new Date(b.date));
+      callback(entries);
     }
+  };
 
-    function deleteEntry(key) {
-      if (!db) return;
-      const tx = db.transaction("entries", "readwrite");
-      const store = tx.objectStore("entries");
-      const req = store.delete(Number(key));
-      req.onsuccess = function() { showEntries(); };
-    }
+  req.onerror = function(e) {
+    console.error("cursor取得エラー:", e.target.error);
+    callback([]);
+  };
+}
 
-    document.getElementById("saveBtn").addEventListener("click", () => {
-      const text = document.getElementById("entry").value.trim();
-      if (!text) return;
+// --- 一覧表示 ---
+function showEntries() {
+  if (!db) return;
+  loadAllEntries(function(entries) {
+    const listEl = document.getElementById("list");
+    listEl.innerHTML = ""; // 既存要素をクリア
 
-      const tx = db.transaction("entries", "readwrite");
-      const store = tx.objectStore("entries");
-      store.add({ text: text, date: new Date().toLocaleString() });
+    entries.forEach((entry) => {
+      const entryDiv = document.createElement("div");
+      entryDiv.className = "entry";
 
-      tx.oncomplete = function() {
-        document.getElementById("entry").value = "";
-        document.getElementById("entry").style.height = "auto";
-        showEntries();
-      };
+      // ヘッダー（日付 + 削除ボタン）
+      const headerDiv = document.createElement("div");
+      headerDiv.className = "entryHeader";
+
+      const dateDiv = document.createElement("div");
+      dateDiv.textContent = entry.date;
+
+      const delBtn = document.createElement("button");
+      delBtn.className = "deleteBtn";
+      delBtn.textContent = "削除";
+      delBtn.dataset.key = String(entry.id); // データベースキー
+
+      delBtn.addEventListener("click", function() {
+        if (confirm("この日記を削除しますか？削除したものは復元できません！")) {
+          deleteEntry(delBtn.dataset.key);
+        }
+      });
+
+      headerDiv.appendChild(dateDiv);
+      headerDiv.appendChild(delBtn);
+
+      // 本文
+      const textDiv = document.createElement("div");
+      textDiv.className = "entryText";
+      textDiv.textContent = entry.text;
+
+      entryDiv.appendChild(headerDiv);
+      entryDiv.appendChild(textDiv);
+      listEl.appendChild(entryDiv);
     });
 
-    const textarea = document.getElementById("entry");
-    textarea.addEventListener("input", () => {
-      textarea.style.height = "auto";
-      textarea.style.height = textarea.scrollHeight + "px";
-    });
-  </script>
+    // スクロール：描画後に最新日記までスクロール
+    const container = document.getElementById("listContainer");
+    requestAnimationFrame(() => { container.scrollTop = container.scrollHeight; });
+  });
+}
+
+// --- 削除処理 ---
+function deleteEntry(key) {
+  if (!db) return;
+  const tx = db.transaction("entries", "readwrite");
+  const store = tx.objectStore("entries");
+  store.delete(Number(key)).onsuccess = () => showEntries(); // 削除後再表示
+}
+
+// --- 保存処理 ---
+document.getElementById("saveBtn").addEventListener("click", () => {
+  const text = document.getElementById("entry").value.trim();
+  if (!text) return;
+
+  const tx = db.transaction("entries", "readwrite");
+  const store = tx.objectStore("entries");
+  store.add({ text: text, date: new Date().toLocaleString() }); // 日付付きで保存
+
+  tx.oncomplete = function() {
+    document.getElementById("entry").value = ""; // 入力欄クリア
+    document.getElementById("entry").style.height = "auto"; // 高さリセット
+    showEntries(); // 最新一覧表示
+  };
+});
+
+// --- 入力欄自動リサイズ ---
+const textarea = document.getElementById("entry");
+textarea.addEventListener("input", () => {
+  textarea.style.height = "auto";
+  textarea.style.height = textarea.scrollHeight + "px"; // 自動高さ調整
+});
+
+// --- フォーカス時にキーボードで隠れないようスクロール ---
+textarea.addEventListener("focus", () => {
+  const container = document.getElementById("listContainer");
+  requestAnimationFrame(() => { container.scrollTop = container.scrollHeight; });
+});
+</script>
+
 </body>
 </html>
