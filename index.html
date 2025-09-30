@@ -2,49 +2,67 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>ひとこと日記 (チャット風) — 修正版</title>
+  <title>ひとこと日記（修正版）</title>
   <style>
     body {
       margin: 0;
       padding-bottom: 70px;
       font-family: sans-serif;
-      font-size: 1.5em;
+      font-size: 1.2em;
     }
 
+    /* スクロール可能なコンテナ（ここをスクロールする） */
     #listContainer {
       padding: 10px;
       overflow-y: auto;
       max-height: calc(100vh - 80px);
+      box-sizing: border-box;
     }
 
-    #list li {
-      white-space: pre-wrap; /* 改行を反映（以前のバージョンに合わせています） */
-      margin-bottom: 10px;
+    /* 各エントリ（区切り線あり） */
+    .entry {
+      padding: 10px 0;
+      border-bottom: 1px solid #ddd; /* 細いグレーの線 */
+    }
+
+    /* 日付と削除ボタンを左側に並べる（すぐ隣） */
+    .entryHeader {
+      display: flex;
+      align-items: center;
+      gap: 10px;            /* 日付と削除ボタンの間隔（隣接） */
+      color: #777;          /* 日付と削除ボタンをグレーに */
+      font-size: 0.9em;
+      margin-bottom: 6px;
+    }
+
+    .entryText {
+      white-space: pre-wrap; /* 改行を反映 */
+      color: #000;           /* 本文は黒 */
     }
 
     .deleteBtn {
-      background-color: #f44336;
-      color: white;
+      background: none;
       border: none;
-      padding: 6px 10px;
+      color: #777; /* グレー */
       cursor: pointer;
-      border-radius: 3px;
       font-size: 0.9em;
+      padding: 2px 6px;
     }
 
     .deleteBtn:hover {
-      background-color: #d32f2f;
+      text-decoration: underline;
     }
 
+    /* 入力欄の固定フッター */
     #inputArea {
       position: fixed;
       bottom: 0;
       left: 0;
       width: 100%;
-      background: #f0f0f0;
+      background: #f6f6f6;
       display: flex;
-      padding: 5px 10px;
-      box-shadow: 0 -2px 5px rgba(0,0,0,0.2);
+      padding: 6px 10px;
+      box-shadow: 0 -2px 5px rgba(0,0,0,0.12);
       box-sizing: border-box;
     }
 
@@ -65,33 +83,17 @@
       font-size: 1em;
       cursor: pointer;
     }
-
-    #pagination {
-      margin-top: 10px;
-    }
-
-    #pagination button {
-      margin: 0 5px;
-      padding: 5px 10px;
-      font-size: 1em;
-      cursor: pointer;
-    }
   </style>
 </head>
 <body>
 
   <div id="listContainer">
-    <h1>ひとこと日記ver1.2</h1>
-    <ol id="list"></ol>
-    <div id="pagination">
-      <button id="prevBtn">前へ</button>
-      <span id="pageInfo"></span>
-      <button id="nextBtn">次へ</button>
-    </div>
+    <h1>ひとこと日記</h1>
+    <div id="list"></div>
   </div>
 
   <div id="inputArea">
-    <textarea id="entry" rows="1" placeholder="今日のひとこと" maxlength="30"></textarea>
+    <textarea id="entry" rows="1" placeholder="今日のひとこと" maxlength="200"></textarea>
     <button id="saveBtn">保存</button>
   </div>
 
@@ -101,7 +103,6 @@
 
     request.onupgradeneeded = function(event) {
       db = event.target.result;
-      // keyPath:id + autoIncrement で作成（既存ストアがあればこの処理はスキップされます）
       if (!db.objectStoreNames.contains("entries")) {
         db.createObjectStore("entries", { keyPath: "id", autoIncrement: true });
       }
@@ -109,38 +110,31 @@
 
     request.onsuccess = function(event) {
       db = event.target.result;
-      showEntries(); // 最初に一覧表示
+      showEntries();
     };
 
     request.onerror = function(event) {
       console.error("DBエラー:", event.target.error);
     };
 
-    let currentPage = 1;
-    const itemsPerPage = 10;
-    let allEntries = []; // {id, date, text} の配列（常に cursor.key を id として保持する）
-
-    // --- すべてのエントリを cursor で読み出して allEntries を作る（必ず key を取得する） ---
+    // --- cursor で必ずキーを取得して全件ロードする関数 ---
     function loadAllEntries(callback) {
       const tx = db.transaction("entries", "readonly");
       const store = tx.objectStore("entries");
       const entries = [];
       const req = store.openCursor();
 
-      req.onsuccess = function(event) {
-        const cursor = event.target.result;
+      req.onsuccess = function(e) {
+        const cursor = e.target.result;
         if (cursor) {
           const val = cursor.value || {};
-          const id = cursor.key; // ここでキーを必ず取得（既存データで value.id が無くても大丈夫）
           entries.push({
-            id: id,
+            id: cursor.key,           // ← cursor.key を必ず使う（これで削除キーが確実）
             date: val.date || "",
             text: val.text || ""
           });
           cursor.continue();
         } else {
-          // 完了
-          console.log("loadAllEntries: total=", entries.length);
           callback(entries);
         }
       };
@@ -151,66 +145,71 @@
       };
     }
 
-    // --- 一覧表示（ページネーション対応） ---
+    // --- 一覧表示（全件、古い→新しい、最後にスクロールで最新を表示） ---
     function showEntries() {
+      if (!db) return;
       loadAllEntries(function(entries) {
-        allEntries = entries;
-        const totalPages = Math.max(1, Math.ceil(allEntries.length / itemsPerPage));
-        if (currentPage > totalPages) currentPage = totalPages;
+        const listEl = document.getElementById("list");
+        listEl.innerHTML = "";
 
-        const list = document.getElementById("list");
-        list.innerHTML = "";
+        entries.forEach((entry) => {
+          const entryDiv = document.createElement("div");
+          entryDiv.className = "entry";
 
-        const startIndex = (currentPage - 1) * itemsPerPage;
-        const endIndex = startIndex + itemsPerPage;
-        const currentEntries = allEntries.slice(startIndex, endIndex);
-
-        currentEntries.forEach((entry, idx) => {
-          const li = document.createElement("li");
+          const headerDiv = document.createElement("div");
+          headerDiv.className = "entryHeader";
 
           const dateDiv = document.createElement("div");
           dateDiv.textContent = entry.date;
 
-          const textDiv = document.createElement("div");
-          textDiv.textContent = entry.text;
-
           const delBtn = document.createElement("button");
-          delBtn.textContent = "削除";
           delBtn.className = "deleteBtn";
+          delBtn.textContent = "削除";
           delBtn.dataset.key = String(entry.id); // cursor.key を文字列で保持
 
-          // デバッグ出力（キーと中身を確認）
-          console.log("render entry:", { index: startIndex + idx, id: entry.id, date: entry.date });
+          // デバッグ出力（必要に応じてブラウザのコンソールで確認してください）
+          console.log("render entry:", { id: entry.id, date: entry.date, textPreview: entry.text.slice(0,30) });
 
           delBtn.addEventListener("click", function() {
-            // 確認は番号表示に頼らず、キーで削除するようにする（番号ズレ防止）
+            console.log("delete requested key =", delBtn.dataset.key);
             if (confirm("この日記を削除しますか？削除したものは復元できません！")) {
-              console.log("delete requested key =", delBtn.dataset.key);
               deleteEntry(delBtn.dataset.key);
             }
           });
 
-          li.appendChild(dateDiv);
-          li.appendChild(textDiv);
-          li.appendChild(delBtn);
-          list.appendChild(li);
+          headerDiv.appendChild(dateDiv);
+          headerDiv.appendChild(delBtn);
+
+          const textDiv = document.createElement("div");
+          textDiv.className = "entryText";
+          textDiv.textContent = entry.text;
+
+          entryDiv.appendChild(headerDiv);
+          entryDiv.appendChild(textDiv);
+          listEl.appendChild(entryDiv);
         });
 
-        document.getElementById("pageInfo").textContent = `ページ ${currentPage} / ${totalPages}`;
+        // スクロールはコンテナを動かす（listContainer が overflow を持つ）
+        const container = document.getElementById("listContainer");
+        // 少し遅延して確実に最後までスクロール（レイアウト反映後）
+        setTimeout(() => {
+          container.scrollTop = container.scrollHeight;
+        }, 0);
       });
     }
 
-    // --- 削除 ---
+    // --- 削除処理 ---
     function deleteEntry(key) {
+      if (!db) {
+        alert("DBに接続されていません。");
+        return;
+      }
       const tx = db.transaction("entries", "readwrite");
       const store = tx.objectStore("entries");
       const req = store.delete(Number(key));
 
       req.onsuccess = function() {
         console.log("deleted key:", key);
-        // 再表示
-        // showEntries() を呼べば cursor から fresh なリストを作るのでキーの整合性も保たれる
-        // ページ数調整は showEntries 内で行う
         showEntries();
       };
 
@@ -221,7 +220,7 @@
     }
 
     // --- 保存（追加） ---
-    document.getElementById("saveBtn").onclick = function() {
+    document.getElementById("saveBtn").addEventListener("click", () => {
       const text = document.getElementById("entry").value.trim();
       if (!text) return;
 
@@ -236,54 +235,28 @@
       tx.oncomplete = function() {
         document.getElementById("entry").value = "";
         document.getElementById("entry").style.height = "auto";
-
-        // 最新ページへ移動（件数カウントで算出）
-        const countTx = db.transaction("entries", "readonly");
-        const countStore = countTx.objectStore("entries");
-        const countReq = countStore.count();
-
-        countReq.onsuccess = function() {
-          const totalItems = countReq.result;
-          currentPage = Math.max(1, Math.ceil(totalItems / itemsPerPage));
-          showEntries();
-        };
-
-        countReq.onerror = function(e) {
-          // 万一カウント失敗しても一覧を再表示
-          console.error("count error:", e.target.error);
-          showEntries();
-        };
+        showEntries();
       };
 
       tx.onerror = function(e) {
         console.error("add transaction error:", e.target.error);
         alert("保存に失敗しました。コンソールを確認してください。");
       };
-    };
+    });
 
-    // --- 入力欄の自動リサイズ ---
+    // --- テキストエリア自動リサイズ ---
     const textarea = document.getElementById("entry");
     textarea.addEventListener("input", () => {
       textarea.style.height = "auto";
       textarea.style.height = textarea.scrollHeight + "px";
     });
 
-    // --- ページ切替 ---
-    document.getElementById("prevBtn").addEventListener("click", () => {
-      if (currentPage > 1) {
-        currentPage--;
-        showEntries();
-      }
-    });
-
-    document.getElementById("nextBtn").addEventListener("click", () => {
-      const totalPages = Math.max(1, Math.ceil(allEntries.length / itemsPerPage));
-      if (currentPage < totalPages) {
-        currentPage++;
-        showEntries();
+    // 初回フォーカス（必要なら）
+    textarea.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+        // Ctrl+Enterで保存するような仕様も後で追加できます
       }
     });
   </script>
-
 </body>
 </html>
