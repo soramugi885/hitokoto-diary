@@ -2,48 +2,50 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>ひとこと日記（修正版）</title>
+  <title>ワンコメ日記</title>
   <style>
     body {
       margin: 0;
-      padding-bottom: 70px;
+      padding-bottom: 80px; /* 入力欄の高さ分確保 */
       font-family: sans-serif;
       font-size: 1.2em;
     }
 
-    /* スクロール可能なコンテナ（ここをスクロールする） */
+    /* スクロール可能なコンテナ */
     #listContainer {
       padding: 10px;
       overflow-y: auto;
-      max-height: calc(100vh - 80px);
+      max-height: calc(100vh - 90px);
       box-sizing: border-box;
     }
 
-    /* 各エントリ（区切り線あり） */
+    /* 各エントリ */
     .entry {
       padding: 10px 0;
-      border-bottom: 1px solid #ddd; /* 細いグレーの線 */
+      border-bottom: 1px solid #ddd;
     }
 
-    /* 日付と削除ボタンを左側に並べる（すぐ隣） */
+    /* 日付と削除ボタンを隣に */
     .entryHeader {
       display: flex;
       align-items: center;
-      gap: 10px;            /* 日付と削除ボタンの間隔（隣接） */
-      color: #777;          /* 日付と削除ボタンをグレーに */
+      gap: 10px;
+      color: #777;
       font-size: 0.9em;
       margin-bottom: 6px;
     }
 
+    /* 本文だけ文字サイズ18px */
     .entryText {
-      white-space: pre-wrap; /* 改行を反映 */
-      color: #000;           /* 本文は黒 */
+      white-space: pre-wrap;
+      color: #000;
+      font-size: 18px;
     }
 
     .deleteBtn {
       background: none;
       border: none;
-      color: #777; /* グレー */
+      color: #777;
       cursor: pointer;
       font-size: 0.9em;
       padding: 2px 6px;
@@ -64,36 +66,61 @@
       padding: 6px 10px;
       box-shadow: 0 -2px 5px rgba(0,0,0,0.12);
       box-sizing: border-box;
+      gap: 8px;
     }
 
     #entry {
       flex-grow: 1;
-      margin-right: 10px;
       font-size: 1em;
       line-height: 1.5;
-      min-height: 1.5em;
+      min-height: 40px; /* 高さ調整 */
       resize: none;
       overflow-y: hidden;
-      padding: 8px;
+      padding: 10px;
       box-sizing: border-box;
+      border: 1px solid #ccc;
+      border-radius: 6px;
     }
 
     #saveBtn {
-      padding: 6px 12px;
       font-size: 1em;
+      padding: 0 16px;
+      min-height: 40px;
+      border-radius: 6px;
+      background-color: #4CAF50;
+      color: white;
+      border: none;
       cursor: pointer;
     }
+
+    #saveBtn:hover {
+      background-color: #45a049;
+    }
+
+    /* スマホ向けレスポンシブ */
+    @media (max-width: 600px) {
+      #entry {
+        font-size: 16px;
+        min-height: 50px;
+      }
+      #saveBtn {
+        font-size: 16px;
+        min-height: 50px;
+        padding: 0 20px;
+      }
+    }
+
   </style>
 </head>
 <body>
 
   <div id="listContainer">
-    <h1>ひとこと日記</h1>
+    <h1>ワンコメント日記ver.1.3</h1>
     <div id="list"></div>
   </div>
 
   <div id="inputArea">
-    <textarea id="entry" rows="1" placeholder="今日のひとこと" maxlength="200"></textarea>
+    <textarea id="entry" rows="1" placeholder="今日のひとこと" maxlength="30"></textarea>
     <button id="saveBtn">保存</button>
   </div>
 
@@ -117,7 +144,6 @@
       console.error("DBエラー:", event.target.error);
     };
 
-    // --- cursor で必ずキーを取得して全件ロードする関数 ---
     function loadAllEntries(callback) {
       const tx = db.transaction("entries", "readonly");
       const store = tx.objectStore("entries");
@@ -129,7 +155,7 @@
         if (cursor) {
           const val = cursor.value || {};
           entries.push({
-            id: cursor.key,           // ← cursor.key を必ず使う（これで削除キーが確実）
+            id: cursor.key,
             date: val.date || "",
             text: val.text || ""
           });
@@ -145,7 +171,6 @@
       };
     }
 
-    // --- 一覧表示（全件、古い→新しい、最後にスクロールで最新を表示） ---
     function showEntries() {
       if (!db) return;
       loadAllEntries(function(entries) {
@@ -165,13 +190,9 @@
           const delBtn = document.createElement("button");
           delBtn.className = "deleteBtn";
           delBtn.textContent = "削除";
-          delBtn.dataset.key = String(entry.id); // cursor.key を文字列で保持
-
-          // デバッグ出力（必要に応じてブラウザのコンソールで確認してください）
-          console.log("render entry:", { id: entry.id, date: entry.date, textPreview: entry.text.slice(0,30) });
+          delBtn.dataset.key = String(entry.id);
 
           delBtn.addEventListener("click", function() {
-            console.log("delete requested key =", delBtn.dataset.key);
             if (confirm("この日記を削除しますか？削除したものは復元できません！")) {
               deleteEntry(delBtn.dataset.key);
             }
@@ -189,73 +210,38 @@
           listEl.appendChild(entryDiv);
         });
 
-        // スクロールはコンテナを動かす（listContainer が overflow を持つ）
         const container = document.getElementById("listContainer");
-        // 少し遅延して確実に最後までスクロール（レイアウト反映後）
-        setTimeout(() => {
-          container.scrollTop = container.scrollHeight;
-        }, 0);
+        setTimeout(() => { container.scrollTop = container.scrollHeight; }, 0);
       });
     }
 
-    // --- 削除処理 ---
     function deleteEntry(key) {
-      if (!db) {
-        alert("DBに接続されていません。");
-        return;
-      }
+      if (!db) return;
       const tx = db.transaction("entries", "readwrite");
       const store = tx.objectStore("entries");
       const req = store.delete(Number(key));
-
-      req.onsuccess = function() {
-        console.log("deleted key:", key);
-        showEntries();
-      };
-
-      req.onerror = function(e) {
-        console.error("delete error:", e.target.error);
-        alert("削除に失敗しました。コンソールを確認してください。");
-      };
+      req.onsuccess = function() { showEntries(); };
     }
 
-    // --- 保存（追加） ---
     document.getElementById("saveBtn").addEventListener("click", () => {
       const text = document.getElementById("entry").value.trim();
       if (!text) return;
 
       const tx = db.transaction("entries", "readwrite");
       const store = tx.objectStore("entries");
-      const addReq = store.add({ text: text, date: new Date().toLocaleString() });
-
-      addReq.onsuccess = function(e) {
-        console.log("added id:", e.target.result);
-      };
+      store.add({ text: text, date: new Date().toLocaleString() });
 
       tx.oncomplete = function() {
         document.getElementById("entry").value = "";
         document.getElementById("entry").style.height = "auto";
         showEntries();
       };
-
-      tx.onerror = function(e) {
-        console.error("add transaction error:", e.target.error);
-        alert("保存に失敗しました。コンソールを確認してください。");
-      };
     });
 
-    // --- テキストエリア自動リサイズ ---
     const textarea = document.getElementById("entry");
     textarea.addEventListener("input", () => {
       textarea.style.height = "auto";
       textarea.style.height = textarea.scrollHeight + "px";
-    });
-
-    // 初回フォーカス（必要なら）
-    textarea.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
-        // Ctrl+Enterで保存するような仕様も後で追加できます
-      }
     });
   </script>
 </body>
